@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <title>線上投票系統</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; background: #f5f5f5; }
+    h1   { color: #003d7a; }
+    h2   { margin-top: 32px; border-bottom: 2px solid #003d7a; padding-bottom: 6px; }
+    input[type=text] { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    button { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .btn-blue   { background: #003d7a; color: #fff; }
+    .btn-green  { background: #28a745; color: #fff; }
+    .btn-red    { background: #dc3545; color: #fff; }
+    .btn-yellow { background: #ffc107; color: #333; }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th, td { padding: 10px 12px; border: 1px solid #ddd; text-align: left; }
+    th { background: #e8f0fe; }
+    .vote-item { display: flex; align-items: center; gap: 10px; padding: 10px; background: #fff; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 6px; }
+    .msg { padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
+    .ok  { background: #d4edda; color: #155724; }
+    .err { background: #f8d7da; color: #721c24; }
+    .tab-bar { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tab-bar button { background: #ddd; }
+    .tab-bar button.active { background: #003d7a; color: #fff; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <h1>線上投票系統</h1>
+
+  <div class="tab-bar">
+    <button :class="{ active: tab === 'vote' }"  @click="tab='vote'">投票頁面</button>
+    <button :class="{ active: tab === 'admin' }" @click="tab='admin'">後台管理</button>
+  </div>
+
+  <div v-if="msg" :class="['msg', msgType]">{{ msg }}</div>
+
+  <!-- 投票頁面 -->
+  <div v-if="tab === 'vote'">
+    <h2>請投票（可多選）</h2>
+    <div style="margin-bottom:12px">
+      姓名：<input v-model="voterName" type="text" placeholder="輸入您的姓名" />
+    </div>
+    <div v-for="item in items" :key="item.itemId" class="vote-item">
+      <input type="checkbox" :value="item.itemId" v-model="selected" />
+      <span style="flex:1">{{ item.itemName }}</span>
+      <span style="color:#888">{{ item.voteCount }} 票</span>
+    </div>
+    <button class="btn-blue" style="margin-top:12px" @click="submitVote">送出投票</button>
+  </div>
+
+  <!-- 後台管理 -->
+  <div v-if="tab === 'admin'">
+    <h2>新增項目</h2>
+    <input v-model="newName" type="text" placeholder="項目名稱" />
+    <button class="btn-green" style="margin-left:8px" @click="addItem">新增</button>
+
+    <h2>所有項目</h2>
+    <table>
+      <thead><tr><th>編號</th><th>名稱</th><th>票數</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr v-for="item in items" :key="item.itemId">
+          <td>{{ item.itemId }}</td>
+          <td>
+            <input v-if="editId === item.itemId" v-model="editName" type="text" />
+            <span v-else>{{ item.itemName }}</span>
+          </td>
+          <td>{{ item.voteCount }}</td>
+          <td style="display:flex;gap:6px">
+            <template v-if="editId === item.itemId">
+              <button class="btn-blue" @click="saveEdit(item.itemId)">儲存</button>
+              <button @click="editId=null">取消</button>
+            </template>
+            <template v-else>
+              <button class="btn-yellow" @click="startEdit(item)">編輯</button>
+              <button class="btn-red"    @click="deleteItem(item.itemId)">刪除</button>
+            </template>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue
+
+createApp({
+  data() {
+    return {
+      tab: 'vote',
+      items: [],
+      voterName: '',
+      selected: [],
+      newName: '',
+      editId: null,
+      editName: '',
+      msg: '',
+      msgType: 'ok'
+    }
+  },
+  mounted() { this.loadItems() },
+  methods: {
+    async loadItems() {
+      const res = await axios.get('/api/items')
+      this.items = res.data
+    },
+    async submitVote() {
+      if (!this.voterName) return this.showMsg('請輸入姓名', 'err')
+      if (!this.selected.length) return this.showMsg('請至少選一個項目', 'err')
+      await axios.post('/api/vote', { voterName: this.voterName, itemIds: this.selected })
+      this.showMsg('投票成功！', 'ok')
+      this.voterName = ''
+      this.selected = []
+      this.loadItems()
+    },
+    async addItem() {
+      if (!this.newName) return
+      await axios.post('/api/items', { itemName: this.newName })
+      this.newName = ''
+      this.showMsg('新增成功', 'ok')
+      this.loadItems()
+    },
+    startEdit(item) { this.editId = item.itemId; this.editName = item.itemName },
+    async saveEdit(id) {
+      await axios.put(`/api/items/${id}`, { itemName: this.editName })
+      this.editId = null
+      this.showMsg('更新成功', 'ok')
+      this.loadItems()
+    },
+    async deleteItem(id) {
+      if (!confirm('確定刪除？')) return
+      await axios.delete(`/api/items/${id}`)
+      this.showMsg('刪除成功', 'ok')
+      this.loadItems()
+    },
+    showMsg(text, type) {
+      this.msg = text; this.msgType = type
+      setTimeout(() => this.msg = '', 3000)
+    }
+  }
+}).mount('#app')
+</script>
+</body>
+</html>
